@@ -328,11 +328,70 @@
       }
     ];
 
-    // --- GLOBAL NOMINATIM GEOCODING SERVICE ---
+    // --- UNIVERSAL GEOCODING SERVICE (Google Maps Geocoder + Global Fallback) ---
     async function geocodeLocationQuery(query) {
       if (!query || !query.trim()) return null;
+      const q = query.trim().toLowerCase();
+
+      // 1. Curated Instant Disaster Knowledge Base for Zero-Latency Lookups
+      const KNOWN_PLACES = {
+        'jagatsinghpur': { lat: 20.272, lng: 86.172, address: 'Jagatsinghpur, Odisha, India' },
+        'cuttack': { lat: 20.462, lng: 85.882, address: 'Cuttack, Odisha, India' },
+        'bhubaneswar': { lat: 20.296, lng: 85.824, address: 'Bhubaneswar, Odisha, India' },
+        'puri': { lat: 19.813, lng: 85.831, address: 'Puri Coastal Sector, Odisha, India' },
+        'odisha': { lat: 20.951, lng: 85.098, address: 'Odisha, India' },
+        'mumbai': { lat: 19.076, lng: 72.877, address: 'Mumbai, Maharashtra, India' },
+        'delhi': { lat: 28.613, lng: 77.209, address: 'New Delhi, Delhi, India' },
+        'kolkata': { lat: 22.572, lng: 88.363, address: 'Kolkata, West Bengal, India' },
+        'chennai': { lat: 13.082, lng: 80.270, address: 'Chennai, Tamil Nadu, India' },
+        'bengaluru': { lat: 12.971, lng: 77.594, address: 'Bengaluru, Karnataka, India' },
+        'bangalore': { lat: 12.971, lng: 77.594, address: 'Bengaluru, Karnataka, India' },
+        'hyderabad': { lat: 17.385, lng: 78.486, address: 'Hyderabad, Telangana, India' },
+        'kerala': { lat: 10.850, lng: 76.271, address: 'Kerala, India' },
+        'wayanad': { lat: 11.685, lng: 76.132, address: 'Wayanad, Kerala, India' },
+        'assam': { lat: 26.200, lng: 92.937, address: 'Assam, India' },
+        'guwahati': { lat: 26.144, lng: 91.736, address: 'Guwahati, Assam, India' },
+        'miami': { lat: 25.761, lng: -80.191, address: 'Miami, Florida, USA' },
+        'tokyo': { lat: 35.676, lng: 139.650, address: 'Tokyo, Japan' },
+        'london': { lat: 51.507, lng: -0.127, address: 'London, UK' },
+        'new york': { lat: 40.712, lng: -74.006, address: 'New York, NY, USA' },
+        'san francisco': { lat: 37.774, lng: -122.419, address: 'San Francisco, CA, USA' },
+        'california': { lat: 36.778, lng: -119.417, address: 'California, USA' },
+        'texas': { lat: 31.968, lng: -99.901, address: 'Texas, USA' },
+        'florida': { lat: 27.664, lng: -81.515, address: 'Florida, USA' }
+      };
+
+      for (const [key, loc] of Object.entries(KNOWN_PLACES)) {
+        if (q.includes(key)) return loc;
+      }
+
+      // 2. Google Maps Platform Geocoder (when API loaded)
+      if (window.google && window.google.maps && window.google.maps.Geocoder) {
+        try {
+          const geocoder = new google.maps.Geocoder();
+          const gRes = await new Promise((resolve) => {
+            geocoder.geocode({ address: query }, (results, status) => {
+              if (status === 'OK' && results && results[0]) {
+                const r = results[0];
+                resolve({
+                  lat: r.geometry.location.lat(),
+                  lng: r.geometry.location.lng(),
+                  address: r.formatted_address
+                });
+              } else {
+                resolve(null);
+              }
+            });
+          });
+          if (gRes) return gRes;
+        } catch (e) {
+          console.warn('Google Maps Geocoder error:', e);
+        }
+      }
+
+      // 3. Fallback: OpenStreetMap Nominatim Geocoder
       try {
-        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`);
         const results = await response.json();
         if (results && results.length > 0) {
           return {
@@ -342,8 +401,9 @@
           };
         }
       } catch (err) {
-        console.warn('Nominatim geocoding failed', err);
+        console.warn('Nominatim geocoding error:', err);
       }
+
       return null;
     }
 
@@ -1482,79 +1542,226 @@
       const [lng, setLng] = useState('');
       const [geocoding, setGeocoding] = useState(false);
       const [geocodeResult, setGeocodeResult] = useState(null);
+      const [suggestions, setSuggestions] = useState([]);
 
-      const [conditionTag, setConditionTag] = useState('auto');
+      const autocompleteInputRef = useRef(null);
+
+      // Attach Google Places Autocomplete when Google Maps API is loaded
+      useEffect(() => {
+        if (!isUploadOpen || !autocompleteInputRef.current) return;
+
+        if (window.google && window.google.maps && window.google.maps.places) {
+          try {
+            const autocomplete = new google.maps.places.Autocomplete(autocompleteInputRef.current, {
+              fields: ['geometry', 'formatted_address', 'name']
+            });
+
+            autocomplete.addListener('place_changed', () => {
+              const place = autocomplete.getPlace();
+              if (place && place.geometry && place.geometry.location) {
+                const latVal = place.geometry.location.lat();
+                const lngVal = place.geometry.location.lng();
+                const formatted = place.formatted_address || place.name || '';
+                setAddress(formatted);
+                setLat(latVal.toFixed(6));
+                setLng(lngVal.toFixed(6));
+                setGeocodeResult(`📍 ${formatted}`);
+                setSuggestions([]);
+              }
+            });
+          } catch(e) {
+            console.warn('Google Places Autocomplete init warning:', e);
+          }
+        }
+      }, [isUploadOpen]);
 
       if (!isUploadOpen) return null;
 
-      const handleGeocode = async () => {
-        if (!address.trim()) return;
+      const handleSearchLocation = async (queryText) => {
+        const query = queryText || address;
+        if (!query.trim()) return;
         setGeocoding(true);
-        const res = await geocodeLocationQuery(address);
+        setGeocodeResult(null);
+
+        const res = await geocodeLocationQuery(query);
         setGeocoding(false);
         if (res) {
-          setLat(res.lat.toString());
-          setLng(res.lng.toString());
-          setGeocodeResult(res.address);
+          setLat(res.lat.toFixed(6));
+          setLng(res.lng.toFixed(6));
+          setAddress(res.address);
+          setGeocodeResult(`✅ Found: ${res.address} (Lat: ${res.lat.toFixed(4)}, Lng: ${res.lng.toFixed(4)})`);
         } else {
-          setGeocodeResult('Location not found, using manual coordinates.');
+          setGeocodeResult('⚠️ Location not found. You can type manual coordinates.');
         }
+      };
+
+      const selectQuickLocation = (locName) => {
+        setAddress(locName);
+        handleSearchLocation(locName);
       };
 
       const handleSubmit = async (e) => {
         e.preventDefault();
         if (!file) return;
-        const parsedLat = parseFloat(lat);
-        const parsedLng = parseFloat(lng);
-        await uploadNewImage(file, address, isNaN(parsedLat) ? null : parsedLat, isNaN(parsedLng) ? null : parsedLng, beforeFile);
+
+        let parsedLat = parseFloat(lat);
+        let parsedLng = parseFloat(lng);
+
+        // If lat/lng empty, do a quick geocode first
+        if ((isNaN(parsedLat) || isNaN(parsedLng)) && address.trim()) {
+          const res = await geocodeLocationQuery(address);
+          if (res) {
+            parsedLat = res.lat;
+            parsedLng = res.lng;
+          }
+        }
+
+        await uploadNewImage(
+          file,
+          address || 'Disaster Incident Location',
+          isNaN(parsedLat) ? null : parsedLat,
+          isNaN(parsedLng) ? null : parsedLng,
+          beforeFile
+        );
         setIsUploadOpen(false);
       };
 
       return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md">
-          <div className="bg-white border border-slate-200 rounded-3xl max-w-md w-full p-6 shadow-2xl relative text-slate-900">
-            <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-md">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-lg w-full p-6 shadow-2xl relative text-slate-900 space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2 font-outfit">
-                🤖 Autonomous AI Vision Scan & Upload
+                🗺️ Google Maps Location Search & AI Drone Upload
               </h2>
-              <button onClick={() => setIsUploadOpen(false)} className="text-slate-400 hover:text-slate-700 font-bold">✕</button>
+              <button onClick={() => setIsUploadOpen(false)} className="text-slate-400 hover:text-slate-700 font-bold text-lg">✕</button>
             </div>
+
             <form onSubmit={handleSubmit} className="space-y-3.5">
+              {/* Drone Image Input */}
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Select Drone / Field Image (AI auto-analyzes pixels)</label>
-                <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files[0])} required className="text-xs text-slate-700 w-full bg-slate-50 p-2.5 rounded-xl border border-slate-200 focus:bg-white" />
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  1. Select Drone / Ground Photo (AI inspects structural damage)
+                </label>
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  onChange={(e) => setFile(e.target.files[0])} 
+                  required 
+                  className="text-xs text-slate-700 w-full bg-slate-50 p-2.5 rounded-xl border border-slate-200 focus:bg-white" 
+                />
               </div>
+
+              {/* Google Maps Location Search Input */}
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Global Address / Location (e.g. Odisha, India or Cuttack)</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                  <span>2. Type Any Disaster Location or Landmark</span>
+                  <span className="text-[10px] text-blue-600 font-normal">Google Maps Integrated 🔍</span>
+                </label>
                 <div className="flex gap-2">
-                  <input type="text" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="e.g. Jagatsinghpur, Odisha, India" className="flex-1 bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 focus:bg-white" />
-                  <button type="button" onClick={handleGeocode} className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm">
-                    {geocoding ? 'Locating...' : 'Geocode'}
+                  <div className="relative flex-1">
+                    <input 
+                      ref={autocompleteInputRef}
+                      type="text" 
+                      value={address} 
+                      onChange={(e) => {
+                        setAddress(e.target.value);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleSearchLocation();
+                        }
+                      }}
+                      placeholder="Type any city, area or landmark (e.g. Jagatsinghpur, Cuttack, Miami, Mumbai)..." 
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 focus:bg-white focus:border-blue-500 focus:outline-none pr-8" 
+                    />
+                    {address && (
+                      <button 
+                        type="button" 
+                        onClick={() => { setAddress(''); setGeocodeResult(null); }}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 font-bold text-xs"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                  <button 
+                    type="button" 
+                    onClick={() => handleSearchLocation()} 
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm transition shrink-0 flex items-center gap-1"
+                  >
+                    {geocoding ? 'Searching...' : '🔍 Search'}
                   </button>
                 </div>
+
+                {/* Quick Disaster Hotspots */}
+                <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                  <span className="text-[10px] font-bold text-slate-400">Quick Picks:</span>
+                  {['Jagatsinghpur', 'Cuttack', 'Bhubaneswar', 'Puri', 'Miami', 'Mumbai'].map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => selectQuickLocation(p)}
+                      className="text-[10px] bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 px-2 py-0.5 rounded-lg border border-slate-200 transition font-medium"
+                    >
+                      📍 {p}
+                    </button>
+                  ))}
+                </div>
+
                 {geocodeResult && (
-                  <p className="text-[11px] text-blue-600 font-medium mt-1 line-clamp-1">📍 {geocodeResult}</p>
+                  <div className={`text-xs p-2.5 rounded-xl mt-2 font-medium border ${geocodeResult.includes('✅') || geocodeResult.includes('📍') ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'}`}>
+                    {geocodeResult}
+                  </div>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-2">
+
+              {/* Resolved Lat / Lng Display */}
+              <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-200/80">
                 <div>
-                  <label className="block text-[11px] font-medium text-slate-600 mb-0.5">Latitude</label>
-                  <input type="text" value={lat} onChange={(e) => setLat(e.target.value)} placeholder="e.g. 20.272" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs text-slate-900 focus:bg-white" />
+                  <label className="block text-[11px] font-bold text-slate-600 mb-0.5">Target Latitude</label>
+                  <input 
+                    type="text" 
+                    value={lat} 
+                    onChange={(e) => setLat(e.target.value)} 
+                    placeholder="Auto-filled via Search" 
+                    className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs text-slate-900 font-mono focus:outline-none" 
+                  />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-medium text-slate-600 mb-0.5">Longitude</label>
-                  <input type="text" value={lng} onChange={(e) => setLng(e.target.value)} placeholder="e.g. 86.172" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs text-slate-900 focus:bg-white" />
+                  <label className="block text-[11px] font-bold text-slate-600 mb-0.5">Target Longitude</label>
+                  <input 
+                    type="text" 
+                    value={lng} 
+                    onChange={(e) => setLng(e.target.value)} 
+                    placeholder="Auto-filled via Search" 
+                    className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs text-slate-900 font-mono focus:outline-none" 
+                  />
                 </div>
               </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setIsUploadOpen(false)} className="px-4 py-2 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-xl border border-slate-200">Cancel</button>
-                <button type="submit" className="px-4 py-2 text-xs bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold rounded-xl shadow-md">Run AI Vision & Move Map</button>
+
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button 
+                  type="button" 
+                  onClick={() => setIsUploadOpen(false)} 
+                  className="px-4 py-2 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-xl border border-slate-200"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="px-5 py-2 text-xs bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold rounded-xl shadow-md transition"
+                >
+                  🚀 Run AI Analysis & Pin on Google Map
+                </button>
               </div>
             </form>
           </div>
         </div>
       );
     }
+
 
     function VerificationModal() {
       const { verificationModalAssessment, setVerificationModalAssessment, confirmAssessment, correctAssessment, rejectAssessment } = useDisaster();
