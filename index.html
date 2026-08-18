@@ -387,7 +387,24 @@
       const [scenarios, setScenarios] = useState(INITIAL_SCENARIOS);
       const [activeScenarioId, setActiveScenarioId] = useState(INITIAL_SCENARIOS[0].id);
       const [weights, setWeights] = useState({ damage: 0.45, vulnerability: 0.30, accessibility: 0.15, confidence: 0.10 });
-      const [geminiApiKey, setGeminiApiKey] = useState('');
+      const [geminiApiKey, setGeminiApiKeyState] = useState(() => localStorage.getItem('rescuemap_gemini_key') || '');
+      const setGeminiApiKey = (k) => { setGeminiApiKeyState(k); localStorage.setItem('rescuemap_gemini_key', k); };
+
+      const [googleMapsApiKey, setGoogleMapsApiKeyState] = useState(() => localStorage.getItem('rescuemap_google_maps_key') || '');
+      const setGoogleMapsApiKey = (key) => {
+        setGoogleMapsApiKeyState(key);
+        localStorage.setItem('rescuemap_google_maps_key', key);
+        if (window.loadGoogleMapsScript) window.loadGoogleMapsScript(key).catch(()=>{});
+      };
+
+      const [mapProvider, setMapProviderState] = useState(() => localStorage.getItem('rescuemap_map_provider') || (localStorage.getItem('rescuemap_google_maps_key') ? 'google' : 'leaflet'));
+      const setMapProvider = (p) => {
+        setMapProviderState(p);
+        localStorage.setItem('rescuemap_map_provider', p);
+      };
+
+      const [googleMapType, setGoogleMapType] = useState('hybrid');
+      const [streetViewModal, setStreetViewModal] = useState(null);
 
       const [selectedAssessment, setSelectedAssessment] = useState(null);
       const [evidenceModalAssessment, setEvidenceModalAssessment] = useState(null);
@@ -666,7 +683,7 @@
           isExportOpen, setIsExportOpen,
           isPresentationOpen, setIsPresentationOpen,
           isQrOpen, setIsQrOpen,
-          geminiApiKey, setGeminiApiKey, googleMapsApiKey, setGoogleMapsApiKey, mapProvider, setMapProvider: handleSetMapProvider, googleMapType, setGoogleMapType, streetViewModal, setStreetViewModal,
+          geminiApiKey, setGeminiApiKey, googleMapsApiKey, setGoogleMapsApiKey, mapProvider, setMapProvider, googleMapType, setGoogleMapType, streetViewModal, setStreetViewModal,
           confirmAssessment, correctAssessment, rejectAssessment, deleteAssessment, uploadNewImage,
           speakBriefing
         }}>
