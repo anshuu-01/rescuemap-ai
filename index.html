@@ -48,6 +48,32 @@
   <!-- Chart.js for Executive Dashboard Analytics -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
+    <!-- Google Maps Platform Loader Helper -->
+  <script>
+    window.loadGoogleMapsScript = function(apiKey) {
+      if (window.google && window.google.maps) return Promise.resolve(window.google.maps);
+      return new Promise((resolve, reject) => {
+        const existing = document.getElementById('google-maps-js-sdk');
+        if (existing) existing.remove();
+        const script = document.createElement('script');
+        script.id = 'google-maps-js-sdk';
+        const keyParam = apiKey ? `key=${encodeURIComponent(apiKey)}&` : '';
+        script.src = `https://maps.googleapis.com/maps/api/js?${keyParam}libraries=places,marker,geometry&v=weekly&callback=initGoogleMapsCallback`;
+        script.async = true;
+        script.defer = true;
+        window.initGoogleMapsCallback = () => {
+          console.log('Google Maps Platform JS API loaded successfully');
+          resolve(window.google.maps);
+        };
+        script.onerror = (err) => {
+          console.warn('Google Maps Platform script load error:', err);
+          reject(err);
+        };
+        document.head.appendChild(script);
+      });
+    };
+  </script>
+
   <!-- Lucide Icons Script -->
   <script src="https://unpkg.com/lucide@latest"></script>
 
@@ -640,7 +666,7 @@
           isExportOpen, setIsExportOpen,
           isPresentationOpen, setIsPresentationOpen,
           isQrOpen, setIsQrOpen,
-          geminiApiKey, setGeminiApiKey,
+          geminiApiKey, setGeminiApiKey, googleMapsApiKey, setGoogleMapsApiKey, mapProvider, setMapProvider: handleSetMapProvider, googleMapType, setGoogleMapType, streetViewModal, setStreetViewModal,
           confirmAssessment, correctAssessment, rejectAssessment, deleteAssessment, uploadNewImage,
           speakBriefing
         }}>
@@ -767,155 +793,218 @@
       );
     }
 
-    // --- LEAFLET MAP VIEW COMPONENT (Option 4 GIS with Place & Location Labels) ---
+    // --- DUAL-ENGINE MAP VIEW (Google Maps Platform + Leaflet Fallback) ---
     function MapView() {
-      const { activeScenario, filteredAssessments, selectedAssessment, setSelectedAssessment } = useDisaster();
-      const mapContainerRef = useRef(null);
-      const mapRef = useRef(null);
-      const tileLayerRef = useRef(null);
-      const labelLayerRef = useRef(null);
-      const markersRef = useRef([]);
+      const { 
+        activeScenario, filteredAssessments, selectedAssessment, setSelectedAssessment,
+        googleMapsApiKey, setIsApiKeyOpen, mapProvider, setMapProvider,
+        googleMapType, setGoogleMapType, setStreetViewModal
+      } = useDisaster();
 
-      const [mapMode, setMapMode] = useState('satellite'); // 'satellite' | 'vector'
+      const leafletContainerRef = useRef(null);
+      const googleContainerRef = useRef(null);
+
+      const leafletMapRef = useRef(null);
+      const leafletTileLayerRef = useRef(null);
+      const leafletLabelLayerRef = useRef(null);
+      const leafletMarkersRef = useRef([]);
+
+      const googleMapRef = useRef(null);
+      const googleMarkersRef = useRef([]);
+      const googleInfoWindowRef = useRef(null);
+
+      const [isGoogleLoaded, setIsGoogleLoaded] = useState(false);
+      const [googleLoadError, setGoogleLoadError] = useState(false);
       const [showLayerMenu, setShowLayerMenu] = useState(false);
+      const [leafletMode, setLeafletMode] = useState('satellite');
 
       const personnelChartRef = useRef(null);
       const resourceChartRef = useRef(null);
       const personnelChartInstance = useRef(null);
       const resourceChartInstance = useRef(null);
 
-      // Initialize Leaflet Map with tile layers and hybrid location labels
+      // Load Google Maps SDK
       useEffect(() => {
-        if (!mapContainerRef.current) return;
+        if (window.google && window.google.maps) {
+          setIsGoogleLoaded(true);
+          return;
+        }
+        if (window.loadGoogleMapsScript) {
+          window.loadGoogleMapsScript(googleMapsApiKey)
+            .then(() => {
+              setIsGoogleLoaded(true);
+              setGoogleLoadError(false);
+            })
+            .catch((err) => {
+              console.warn('Google Maps load error:', err);
+              setGoogleLoadError(true);
+            });
+        }
+      }, [googleMapsApiKey]);
 
-        if (!mapRef.current) {
-          const map = L.map(mapContainerRef.current, { zoomControl: false }).setView(
+      // Initialize / Update Google Maps
+      useEffect(() => {
+        if (mapProvider !== 'google' || !isGoogleLoaded || !googleContainerRef.current || !window.google || !window.google.maps) return;
+
+        const mapTypeIdMap = {
+          hybrid: google.maps.MapTypeId.HYBRID,
+          satellite: google.maps.MapTypeId.SATELLITE,
+          roadmap: google.maps.MapTypeId.ROADMAP,
+          terrain: google.maps.MapTypeId.TERRAIN
+        };
+
+        if (!googleMapRef.current) {
+          const map = new google.maps.Map(googleContainerRef.current, {
+            center: { lat: activeScenario.center.lat, lng: activeScenario.center.lng },
+            zoom: activeScenario.zoom,
+            mapTypeId: mapTypeIdMap[googleMapType] || google.maps.MapTypeId.HYBRID,
+            disableDefaultUI: false,
+            zoomControl: false,
+            mapTypeControl: false,
+            scaleControl: true,
+            streetViewControl: true,
+            rotateControl: true,
+            fullscreenControl: false,
+            gestureHandling: 'greedy'
+          });
+
+          googleInfoWindowRef.current = new google.maps.InfoWindow();
+          googleMapRef.current = map;
+        } else {
+          googleMapRef.current.setCenter({ lat: activeScenario.center.lat, lng: activeScenario.center.lng });
+          googleMapRef.current.setZoom(activeScenario.zoom);
+          googleMapRef.current.setMapTypeId(mapTypeIdMap[googleMapType] || google.maps.MapTypeId.HYBRID);
+        }
+      }, [mapProvider, isGoogleLoaded, activeScenario, googleMapType]);
+
+      // Update Google Maps Markers
+      useEffect(() => {
+        if (mapProvider !== 'google' || !googleMapRef.current || !window.google) return;
+
+        // Clear previous markers
+        googleMarkersRef.current.forEach((m) => m.setMap(null));
+        googleMarkersRef.current = [];
+
+        filteredAssessments.forEach((ast) => {
+          let color = '#3b82f6';
+          if (ast.status === 'rejected') color = '#64748b';
+          else if (ast.priorityTier === 'Tier S') color = '#ef4444';
+          else if (ast.priorityTier === 'Tier A') color = '#f97316';
+          else if (ast.priorityTier === 'Tier B') color = '#eab308';
+          else if (ast.priorityTier === 'Tier C') color = '#10b981';
+
+          const siteName = ast.location.address ? ast.location.address.split(',')[0] : 'Damage Site';
+
+          // SVG Marker Pin
+          const markerSvg = `data:image/svg+xml;utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 46" width="36" height="46"><path d="M18 0 C8.06 0 0 8.06 0 18 C0 31.5 18 46 18 46 C18 46 36 31.5 36 18 C36 8.06 27.94 0 18 0 Z" fill="${encodeURIComponent(color)}" stroke="%23ffffff" stroke-width="2.5"/><circle cx="18" cy="17" r="8" fill="%23ffffff"/><text x="18" y="21" font-size="11" font-weight="bold" font-family="sans-serif" text-anchor="middle" fill="${encodeURIComponent(color)}">${ast.priorityTier.replace('Tier ', '')}</text></svg>`;
+
+          const marker = new google.maps.Marker({
+            position: { lat: ast.location.lat, lng: ast.location.lng },
+            map: googleMapRef.current,
+            title: `${siteName} (${ast.priorityTier})`,
+            icon: {
+              url: markerSvg,
+              scaledSize: new google.maps.Size(36, 46),
+              anchor: new google.maps.Point(18, 46)
+            }
+          });
+
+          marker.addListener('click', () => {
+            setSelectedAssessment(ast);
+            if (googleInfoWindowRef.current) {
+              const contentString = `
+                <div style="font-family: Inter, sans-serif; max-width: 240px; color: #0f172a; padding: 4px;">
+                  <img src="${ast.imageUrl}" style="width: 100%; height: 95px; object-fit: cover; border-radius: 8px; margin-bottom: 6px;" />
+                  <h4 style="font-weight: 800; font-size: 12px; margin-bottom: 2px; color: #0f172a;">${ast.location.address || 'Damage Site'}</h4>
+                  <p style="font-size: 11px; color: #64748b; margin-bottom: 4px;"><strong style="color:${color};">${ast.priorityTier} (${ast.priorityScore} Pts)</strong> • ${ast.structuralDamage}</p>
+                  <p style="font-size: 11px; color: #334155; line-height: 1.4; margin-bottom: 8px;">${ast.aiReasoningText}</p>
+                  <div style="display: flex; gap: 6px;">
+                    <button onclick="window.triggerStreetViewFromMap(${ast.location.lat}, ${ast.location.lng}, '${encodeURIComponent(ast.location.address || siteName)}')" style="background: #2563eb; color: #ffffff; border: none; border-radius: 6px; padding: 4px 8px; font-size: 10px; font-weight: 700; cursor: pointer;">
+                      🚶 Street View
+                    </button>
+                  </div>
+                </div>
+              `;
+              googleInfoWindowRef.current.setContent(contentString);
+              googleInfoWindowRef.current.open(googleMapRef.current, marker);
+            }
+          });
+
+          marker._astId = ast.id;
+          googleMarkersRef.current.push(marker);
+        });
+      }, [mapProvider, filteredAssessments]);
+
+      // Global window hook for Street View popup button
+      useEffect(() => {
+        window.triggerStreetViewFromMap = (lat, lng, addr) => {
+          setStreetViewModal({
+            open: true,
+            lat,
+            lng,
+            address: decodeURIComponent(addr)
+          });
+        };
+      }, []);
+
+      // Focus / FlyTo assessment in Google Maps or Leaflet
+      useEffect(() => {
+        if (!selectedAssessment || !selectedAssessment.location) return;
+
+        if (mapProvider === 'google' && googleMapRef.current) {
+          googleMapRef.current.panTo({ lat: selectedAssessment.location.lat, lng: selectedAssessment.location.lng });
+          googleMapRef.current.setZoom(17);
+          const targetMarker = googleMarkersRef.current.find((m) => m._astId === selectedAssessment.id);
+          if (targetMarker && googleInfoWindowRef.current) {
+            google.maps.event.trigger(targetMarker, 'click');
+          }
+        } else if (leafletMapRef.current) {
+          leafletMapRef.current.flyTo([selectedAssessment.location.lat, selectedAssessment.location.lng], 16, { animate: true, duration: 1.2 });
+          const targetMarker = leafletMarkersRef.current.find((m) => m._astId === selectedAssessment.id);
+          if (targetMarker) targetMarker.openPopup();
+        }
+      }, [selectedAssessment, mapProvider]);
+
+      // Initialize Leaflet Map (Fallback / Alternate Mode)
+      useEffect(() => {
+        if (mapProvider !== 'leaflet' || !leafletContainerRef.current) return;
+
+        if (!leafletMapRef.current) {
+          const map = L.map(leafletContainerRef.current, { zoomControl: false }).setView(
             [activeScenario.center.lat, activeScenario.center.lng],
             activeScenario.zoom
           );
 
-          // Base Satellite or Vector Layer
           const satelliteUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
           const vectorUrl = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 
-          const initialUrl = mapMode === 'satellite' ? satelliteUrl : vectorUrl;
-          const tileLayer = L.tileLayer(initialUrl, {
+          const tileLayer = L.tileLayer(leafletMode === 'satellite' ? satelliteUrl : vectorUrl, {
             maxZoom: 19,
-            maxNativeZoom: mapMode === 'satellite' ? 17 : 19,
+            maxNativeZoom: leafletMode === 'satellite' ? 17 : 19,
             subdomains: 'abcd'
           }).addTo(map);
 
-          // Reference Place & Street Names Label Layer (Overlaid on top of Satellite)
           const labelsUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
           const labelLayer = L.tileLayer(labelsUrl, {
             maxZoom: 19,
             maxNativeZoom: 17,
-            pane: 'markerPane' // Render text labels over satellite imagery
+            pane: 'markerPane'
           }).addTo(map);
 
-          tileLayerRef.current = tileLayer;
-          labelLayerRef.current = labelLayer;
-          mapRef.current = map;
+          leafletTileLayerRef.current = tileLayer;
+          leafletLabelLayerRef.current = labelLayer;
+          leafletMapRef.current = map;
         } else {
-          mapRef.current.setView([activeScenario.center.lat, activeScenario.center.lng], activeScenario.zoom);
+          leafletMapRef.current.setView([activeScenario.center.lat, activeScenario.center.lng], activeScenario.zoom);
         }
-      }, [activeScenario]);
+      }, [mapProvider, activeScenario]);
 
-      // Switch Map Layer (Satellite vs Vector)
-      const switchMapLayer = (mode) => {
-        setMapMode(mode);
-        setShowLayerMenu(false);
-        if (mapRef.current && tileLayerRef.current) {
-          mapRef.current.removeLayer(tileLayerRef.current);
-          const newUrl = mode === 'satellite' 
-            ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-            : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
-          
-          const newLayer = L.tileLayer(newUrl, {
-            maxZoom: 19,
-            maxNativeZoom: mode === 'satellite' ? 17 : 19,
-            subdomains: 'abcd'
-          }).addTo(mapRef.current);
-          tileLayerRef.current = newLayer;
-
-          if (mode === 'satellite' && labelLayerRef.current) {
-            labelLayerRef.current.addTo(mapRef.current);
-          } else if (labelLayerRef.current) {
-            mapRef.current.removeLayer(labelLayerRef.current);
-          }
-        }
-      };
-
-      // Render Floating Personnel Bar Chart & Resource Line Chart
+      // Leaflet Markers
       useEffect(() => {
-        if (window.Chart && personnelChartRef.current) {
-          if (personnelChartInstance.current) personnelChartInstance.current.destroy();
-          personnelChartInstance.current = new window.Chart(personnelChartRef.current, {
-            type: 'bar',
-            data: {
-              labels: ['T1', 'T2', 'T3', 'T4', 'T5'],
-              datasets: [{
-                data: [70, 35, 65, 85, 60],
-                backgroundColor: '#0284c7',
-                borderRadius: 4
-              }]
-            },
-            options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              plugins: { legend: { display: false } },
-              scales: { x: { display: false }, y: { display: false } }
-            }
-          });
-        }
+        if (mapProvider !== 'leaflet' || !leafletMapRef.current) return;
 
-        if (window.Chart && resourceChartRef.current) {
-          if (resourceChartInstance.current) resourceChartInstance.current.destroy();
-          resourceChartInstance.current = new window.Chart(resourceChartRef.current, {
-            type: 'line',
-            data: {
-              labels: ['W1', 'W2', 'W3', 'W4', 'W5'],
-              datasets: [{
-                data: [15, 45, 35, 30, 80],
-                borderColor: '#0284c7',
-                borderWidth: 2,
-                tension: 0.4,
-                fill: false,
-                pointRadius: 0
-              }]
-            },
-            options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              plugins: { legend: { display: false } },
-              scales: { x: { display: false }, y: { display: false } }
-            }
-          });
-        }
-      }, []);
-
-      // Fly map to selected assessment when Focus Map is clicked
-      useEffect(() => {
-        if (mapRef.current && selectedAssessment && selectedAssessment.location) {
-          mapRef.current.flyTo(
-            [selectedAssessment.location.lat, selectedAssessment.location.lng],
-            16,
-            { animate: true, duration: 1.2 }
-          );
-
-          const targetMarker = markersRef.current.find((m) => m._astId === selectedAssessment.id);
-          if (targetMarker) {
-            targetMarker.openPopup();
-          }
-        }
-      }, [selectedAssessment]);
-
-      useEffect(() => {
-        if (!mapRef.current) return;
-
-        // Clear existing markers
-        markersRef.current.forEach((m) => mapRef.current.removeLayer(m));
-        markersRef.current = [];
+        leafletMarkersRef.current.forEach((m) => leafletMapRef.current.removeLayer(m));
+        leafletMarkersRef.current = [];
 
         filteredAssessments.forEach((ast) => {
           let color = '#3b82f6';
@@ -951,7 +1040,7 @@
             iconAnchor: [110, 65]
           });
 
-          const marker = L.marker([ast.location.lat, ast.location.lng], { icon: customIcon }).addTo(mapRef.current);
+          const marker = L.marker([ast.location.lat, ast.location.lng], { icon: customIcon }).addTo(leafletMapRef.current);
           marker._astId = ast.id;
           
           marker.bindPopup(`
@@ -964,85 +1053,209 @@
           `);
 
           marker.on('click', () => setSelectedAssessment(ast));
-          markersRef.current.push(marker);
+          leafletMarkersRef.current.push(marker);
         });
-      }, [filteredAssessments]);
+      }, [mapProvider, filteredAssessments]);
+
+      // Charts
+      useEffect(() => {
+        if (window.Chart && personnelChartRef.current) {
+          if (personnelChartInstance.current) personnelChartInstance.current.destroy();
+          personnelChartInstance.current = new window.Chart(personnelChartRef.current, {
+            type: 'bar',
+            data: {
+              labels: ['T1', 'T2', 'T3', 'T4', 'T5'],
+              datasets: [{ data: [70, 35, 65, 85, 60], backgroundColor: '#0284c7', borderRadius: 4 }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: { legend: { display: false } },
+              scales: { x: { display: false }, y: { display: false } }
+            }
+          });
+        }
+
+        if (window.Chart && resourceChartRef.current) {
+          if (resourceChartInstance.current) resourceChartInstance.current.destroy();
+          resourceChartInstance.current = new window.Chart(resourceChartRef.current, {
+            type: 'line',
+            data: {
+              labels: ['W1', 'W2', 'W3', 'W4', 'W5'],
+              datasets: [{ data: [15, 45, 35, 30, 80], borderColor: '#0284c7', borderWidth: 2, tension: 0.4, fill: false, pointRadius: 0 }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: { legend: { display: false } },
+              scales: { x: { display: false }, y: { display: false } }
+            }
+          });
+        }
+      }, []);
+
+      const zoomIn = () => {
+        if (mapProvider === 'google' && googleMapRef.current) {
+          googleMapRef.current.setZoom(googleMapRef.current.getZoom() + 1);
+        } else if (leafletMapRef.current) {
+          leafletMapRef.current.zoomIn();
+        }
+      };
+
+      const zoomOut = () => {
+        if (mapProvider === 'google' && googleMapRef.current) {
+          googleMapRef.current.setZoom(googleMapRef.current.getZoom() - 1);
+        } else if (leafletMapRef.current) {
+          leafletMapRef.current.zoomOut();
+        }
+      };
+
+      const resetView = () => {
+        if (mapProvider === 'google' && googleMapRef.current) {
+          googleMapRef.current.panTo({ lat: activeScenario.center.lat, lng: activeScenario.center.lng });
+          googleMapRef.current.setZoom(activeScenario.zoom);
+        } else if (leafletMapRef.current) {
+          leafletMapRef.current.setView([activeScenario.center.lat, activeScenario.center.lng], activeScenario.zoom);
+        }
+      };
+
+      const openCurrentStreetView = () => {
+        const target = selectedAssessment || filteredAssessments[0];
+        if (target) {
+          setStreetViewModal({
+            open: true,
+            lat: target.location.lat,
+            lng: target.location.lng,
+            address: target.location.address
+          });
+        }
+      };
 
       return (
         <div className="relative w-full h-full rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-slate-100 min-h-[460px] lg:min-h-0">
-          <div ref={mapContainerRef} className="w-full h-full z-10" />
+          {/* Map Containers */}
+          {mapProvider === 'google' ? (
+            <div ref={googleContainerRef} className="w-full h-full z-10 bg-slate-900">
+              {(!isGoogleLoaded || googleLoadError) && (
+                <div className="absolute inset-0 z-30 flex flex-col items-center justify-center p-6 bg-slate-900/90 text-white text-center space-y-3">
+                  <div className="text-3xl">🗺️</div>
+                  <h3 className="font-bold text-base font-outfit">Google Maps Platform Ready</h3>
+                  <p className="text-xs text-slate-300 max-w-md">
+                    Google Maps Platform mode is active. You can enter your Google Maps API Key in Settings or switch to Leaflet GIS.
+                  </p>
+                  <div className="flex gap-2">
+                    <button onClick={() => setIsApiKeyOpen(true)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md">
+                      ⚙️ Configure Google Maps Key
+                    </button>
+                    <button onClick={() => setMapProvider('leaflet')} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700">
+                      Switch to Leaflet GIS
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div ref={leafletContainerRef} className="w-full h-full z-10" />
+          )}
 
-          {/* Top Center Floating Pill with Regional Location Banner */}
+          {/* Top Center Floating Location Banner */}
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-white/95 backdrop-blur-md px-5 py-2 rounded-full shadow-lg border border-slate-200/80 text-xs font-extrabold text-slate-900 font-outfit flex items-center gap-2 max-w-[90%] truncate">
             <span className="text-red-600 font-bold">📍 Location:</span>
-            <span className="text-slate-800 font-bold truncate">{activeScenario.areaName} ({activeScenario.title})</span>
+            <span className="text-slate-800 font-bold truncate">{activeScenario.areaName}</span>
             <span className="text-slate-300">•</span>
-            <span className="text-blue-600 font-mono font-extrabold">{filteredAssessments.length > 0 ? (filteredAssessments.length * 240 + 89) : 1489} Incidents</span>
+            <span className="text-blue-600 font-mono font-extrabold">{filteredAssessments.length} Priority Sites</span>
           </div>
 
-          {/* Top Right Floating Map Controls (Layers & Filters) */}
+          {/* Top Right Floating Map Controls (Layers & Provider Switcher) */}
           <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
             <div className="relative">
               <button 
                 onClick={() => setShowLayerMenu(!showLayerMenu)}
                 className="flex items-center gap-1.5 bg-white/95 backdrop-blur-md hover:bg-white border border-slate-200 px-3.5 py-1.5 rounded-xl shadow-md text-xs font-bold text-slate-800 transition cursor-pointer"
               >
-                <i data-lucide="layers" className="w-3.5 h-3.5 text-blue-600"></i> {mapMode === 'satellite' ? 'Satellite GIS' : 'Executive Vector'}
+                <i data-lucide="layers" className="w-3.5 h-3.5 text-blue-600"></i>
+                <span>{mapProvider === 'google' ? `Google ${googleMapType.toUpperCase()}` : 'Leaflet GIS'}</span>
               </button>
 
               {showLayerMenu && (
-                <div className="absolute right-0 top-10 w-44 bg-white border border-slate-200 rounded-xl shadow-xl p-1.5 z-30 space-y-1 text-xs font-medium">
+                <div className="absolute right-0 top-10 w-52 bg-white border border-slate-200 rounded-2xl shadow-2xl p-2 z-30 space-y-1 text-xs font-medium">
+                  <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Google Maps Platform</div>
                   <button 
-                    onClick={() => switchMapLayer('satellite')}
-                    className={`w-full text-left px-3 py-1.5 rounded-lg flex items-center justify-between ${mapMode === 'satellite' ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-slate-50 text-slate-700'}`}
+                    onClick={() => { setMapProvider('google'); setGoogleMapType('hybrid'); setShowLayerMenu(false); }}
+                    className={`w-full text-left px-3 py-1.5 rounded-lg flex items-center justify-between ${mapProvider === 'google' && googleMapType === 'hybrid' ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-slate-50 text-slate-700'}`}
                   >
-                    🛰️ Satellite GIS {mapMode === 'satellite' && '✓'}
+                    🛰️ Google Hybrid {mapProvider === 'google' && googleMapType === 'hybrid' && '✓'}
                   </button>
                   <button 
-                    onClick={() => switchMapLayer('vector')}
-                    className={`w-full text-left px-3 py-1.5 rounded-lg flex items-center justify-between ${mapMode === 'vector' ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-slate-50 text-slate-700'}`}
+                    onClick={() => { setMapProvider('google'); setGoogleMapType('satellite'); setShowLayerMenu(false); }}
+                    className={`w-full text-left px-3 py-1.5 rounded-lg flex items-center justify-between ${mapProvider === 'google' && googleMapType === 'satellite' ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-slate-50 text-slate-700'}`}
                   >
-                    🗺️ Executive Vector {mapMode === 'vector' && '✓'}
+                    🌌 Google Satellite {mapProvider === 'google' && googleMapType === 'satellite' && '✓'}
+                  </button>
+                  <button 
+                    onClick={() => { setMapProvider('google'); setGoogleMapType('roadmap'); setShowLayerMenu(false); }}
+                    className={`w-full text-left px-3 py-1.5 rounded-lg flex items-center justify-between ${mapProvider === 'google' && googleMapType === 'roadmap' ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-slate-50 text-slate-700'}`}
+                  >
+                    🗺️ Google Roadmap {mapProvider === 'google' && googleMapType === 'roadmap' && '✓'}
+                  </button>
+                  <button 
+                    onClick={() => { setMapProvider('google'); setGoogleMapType('terrain'); setShowLayerMenu(false); }}
+                    className={`w-full text-left px-3 py-1.5 rounded-lg flex items-center justify-between ${mapProvider === 'google' && googleMapType === 'terrain' ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-slate-50 text-slate-700'}`}
+                  >
+                    ⛰️ Google Terrain {mapProvider === 'google' && googleMapType === 'terrain' && '✓'}
+                  </button>
+
+                  <div className="border-t border-slate-100 my-1"></div>
+                  <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Leaflet GIS Layer</div>
+                  <button 
+                    onClick={() => { setMapProvider('leaflet'); setLeafletMode('satellite'); setShowLayerMenu(false); }}
+                    className={`w-full text-left px-3 py-1.5 rounded-lg flex items-center justify-between ${mapProvider === 'leaflet' && leafletMode === 'satellite' ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-slate-50 text-slate-700'}`}
+                  >
+                    🌍 ESRI Satellite {mapProvider === 'leaflet' && leafletMode === 'satellite' && '✓'}
+                  </button>
+                  <button 
+                    onClick={() => { setMapProvider('leaflet'); setLeafletMode('vector'); setShowLayerMenu(false); }}
+                    className={`w-full text-left px-3 py-1.5 rounded-lg flex items-center justify-between ${mapProvider === 'leaflet' && leafletMode === 'vector' ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-slate-50 text-slate-700'}`}
+                  >
+                    🧭 CartoDB Voyager {mapProvider === 'leaflet' && leafletMode === 'vector' && '✓'}
                   </button>
                 </div>
               )}
             </div>
 
-            <button className="flex items-center gap-1.5 bg-white/95 backdrop-blur-md hover:bg-white border border-slate-200 px-3.5 py-1.5 rounded-xl shadow-md text-xs font-bold text-slate-800 transition">
-              <i data-lucide="filter" className="w-3.5 h-3.5 text-slate-600"></i> Filters
+            <button 
+              onClick={openCurrentStreetView}
+              className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white px-3.5 py-1.5 rounded-xl shadow-md text-xs font-bold transition cursor-pointer"
+              title="Inspect 360 Street View"
+            >
+              🚶 Street View
             </button>
           </div>
 
           {/* Left Zoom & Fullscreen Controls */}
           <div className="absolute top-4 left-4 z-20 flex flex-col gap-1.5">
-            <button onClick={() => mapRef.current && mapRef.current.zoomIn()} className="w-8 h-8 bg-white/95 hover:bg-white border border-slate-200 rounded-xl shadow-md flex items-center justify-center font-bold text-slate-800 text-sm">
+            <button onClick={zoomIn} className="w-8 h-8 bg-white/95 hover:bg-white border border-slate-200 rounded-xl shadow-md flex items-center justify-center font-bold text-slate-800 text-sm">
               +
             </button>
-            <button onClick={() => mapRef.current && mapRef.current.zoomOut()} className="w-8 h-8 bg-white/95 hover:bg-white border border-slate-200 rounded-xl shadow-md flex items-center justify-center font-bold text-slate-800 text-sm">
+            <button onClick={zoomOut} className="w-8 h-8 bg-white/95 hover:bg-white border border-slate-200 rounded-xl shadow-md flex items-center justify-center font-bold text-slate-800 text-sm">
               −
             </button>
-            <button onClick={() => mapRef.current && mapRef.current.setView([activeScenario.center.lat, activeScenario.center.lng], activeScenario.zoom)} className="w-8 h-8 bg-white/95 hover:bg-white border border-slate-200 rounded-xl shadow-md flex items-center justify-center text-slate-700 text-xs">
+            <button onClick={resetView} className="w-8 h-8 bg-white/95 hover:bg-white border border-slate-200 rounded-xl shadow-md flex items-center justify-center text-slate-700 text-xs" title="Reset View">
               🔍
             </button>
           </div>
 
-          {/* Bottom Right Floating Overlay Cards (Active Personnel & Resource Allocation) */}
+          {/* Bottom Right Floating Overlay Cards */}
           <div className="absolute bottom-4 right-4 z-20 hidden md:flex items-center gap-3">
-            {/* Active Personnel Card */}
             <div className="bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-2xl p-3 shadow-xl w-44 space-y-1">
               <div className="text-[11px] font-bold text-slate-900">Active Personnel</div>
-              <div className="h-14 w-full">
-                <canvas ref={personnelChartRef}></canvas>
-              </div>
+              <div className="h-14 w-full"><canvas ref={personnelChartRef}></canvas></div>
               <div className="text-[9px] text-slate-400 text-center font-medium">Teams deployed</div>
             </div>
 
-            {/* Resource Allocation Card */}
             <div className="bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-2xl p-3 shadow-xl w-44 space-y-1">
               <div className="text-[11px] font-bold text-slate-900">Resource Allocation</div>
-              <div className="h-14 w-full">
-                <canvas ref={resourceChartRef}></canvas>
-              </div>
+              <div className="h-14 w-full"><canvas ref={resourceChartRef}></canvas></div>
               <div className="flex justify-between text-[9px] text-slate-500 font-medium px-1">
                 <span>Water</span>
                 <span>Medical</span>
@@ -1437,7 +1650,7 @@
     function QrModal() {
       const { isQrOpen, setIsQrOpen } = useDisaster();
       const canvasRef = useRef(null);
-      const shareUrl = "https://huntington-space-confidential-campbell.trycloudflare.com";
+      const shareUrl = "https://anshuu-01.github.io/rescuemap-ai/";
       const localUrl = "http://10.145.220.18:3000";
 
       useEffect(() => {
@@ -1581,49 +1794,176 @@
       );
     }
 
+    
+    function StreetViewModal() {
+      const { streetViewModal, setStreetViewModal } = useDisaster();
+      const panoContainerRef = useRef(null);
+      const panoInstanceRef = useRef(null);
+
+      useEffect(() => {
+        if (!streetViewModal || !streetViewModal.open || !panoContainerRef.current) return;
+
+        if (window.google && window.google.maps) {
+          const pano = new google.maps.StreetViewPanorama(panoContainerRef.current, {
+            position: { lat: streetViewModal.lat, lng: streetViewModal.lng },
+            pov: { heading: 165, pitch: 0 },
+            zoom: 1,
+            addressControl: true,
+            fullscreenControl: true,
+            motionTracking: false,
+            linksControl: true,
+            panControl: true,
+            enableCloseButton: false
+          });
+
+          // Check if Street View is available at this exact lat/lng
+          const svService = new google.maps.StreetViewService();
+          svService.getPanorama({ location: { lat: streetViewModal.lat, lng: streetViewModal.lng }, radius: 1000 }, (data, status) => {
+            if (status === google.maps.StreetViewStatus.OK && data && data.location) {
+              pano.setPosition(data.location.latLng);
+            }
+          });
+
+          panoInstanceRef.current = pano;
+        }
+      }, [streetViewModal]);
+
+      if (!streetViewModal || !streetViewModal.open) return null;
+
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-4xl w-full p-6 shadow-2xl relative space-y-4 text-slate-900 flex flex-col max-h-[90vh]">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div>
+                <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2 font-outfit">
+                  🚶 Google Street View 360° Ground Reconnaissance
+                </h2>
+                <p className="text-xs text-slate-500 font-medium">{streetViewModal.address || 'Disaster Coordinate'}</p>
+              </div>
+              <button onClick={() => setStreetViewModal(null)} className="text-slate-400 hover:text-slate-700 font-bold text-lg">✕</button>
+            </div>
+
+            <div className="relative w-full h-[450px] rounded-2xl overflow-hidden border border-slate-200 bg-slate-900 shadow-inner">
+              <div ref={panoContainerRef} className="w-full h-full" />
+              {(!window.google || !window.google.maps) && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-white text-center p-6 bg-slate-900/90">
+                  <span className="text-3xl mb-2">📷</span>
+                  <p className="text-sm font-bold">Google Maps Platform API Key Required for Live 360° Street View</p>
+                  <p className="text-xs text-slate-400 mt-1 max-w-md">Configure your Google Maps API Key in Settings to enable live Street View panoramas for all disaster sites.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-between items-center text-xs text-slate-600">
+              <span className="font-mono text-[11px] text-blue-600 font-semibold">📍 Lat: {streetViewModal.lat.toFixed(5)}, Lng: {streetViewModal.lng.toFixed(5)}</span>
+              <button onClick={() => setStreetViewModal(null)} className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl shadow-md">
+                Close Viewer
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     function ApiKeyModal() {
-      const { isApiKeyOpen, setIsApiKeyOpen, geminiApiKey, setGeminiApiKey } = useDisaster();
-      const [key, setKey] = useState(geminiApiKey);
+      const { 
+        isApiKeyOpen, setIsApiKeyOpen, 
+        geminiApiKey, setGeminiApiKey,
+        googleMapsApiKey, setGoogleMapsApiKey,
+        mapProvider, setMapProvider 
+      } = useDisaster();
+
+      const [tab, setTab] = useState('gmaps'); // 'gmaps' | 'gemini'
+      const [gKey, setGKey] = useState(googleMapsApiKey);
+      const [gemKey, setGemKey] = useState(geminiApiKey);
+
       if (!isApiKeyOpen) return null;
 
-      const activeEngine = geminiApiKey.trim() ? 'Gemini 1.5 Flash (Cloud API)' : 'Local Multimodal AI Vision Simulation (Zero-Latency)';
+      const handleSave = () => {
+        setGoogleMapsApiKey(gKey.trim());
+        setGeminiApiKey(gemKey.trim());
+        setIsApiKeyOpen(false);
+      };
 
       return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md">
-          <div className="bg-white border border-slate-200 rounded-3xl max-w-md w-full p-6 shadow-2xl relative space-y-4 text-slate-900">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-lg w-full p-6 shadow-2xl relative space-y-4 text-slate-900">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2 font-outfit">
-                ⚙️ AI Vision Engine & Settings
+                ⚙️ Platform Configuration & Cloud APIs
               </h2>
               <button onClick={() => setIsApiKeyOpen(false)} className="text-slate-400 hover:text-slate-700 font-bold">✕</button>
             </div>
 
-            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 text-xs space-y-1">
-              <div className="text-slate-500 font-medium">Current Active Engine:</div>
-              <div className="font-bold font-mono text-blue-700 flex items-center gap-1.5">
-                <span className={`w-2.5 h-2.5 rounded-full ${geminiApiKey ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
-                {activeEngine}
+            {/* Tab Selector */}
+            <div className="flex border border-slate-200 rounded-xl p-1 bg-slate-50 gap-1 text-xs font-bold">
+              <button 
+                onClick={() => setTab('gmaps')}
+                className={`flex-1 py-1.5 rounded-lg transition flex items-center justify-center gap-1.5 ${tab === 'gmaps' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                🗺️ Google Maps Platform
+              </button>
+              <button 
+                onClick={() => setTab('gemini')}
+                className={`flex-1 py-1.5 rounded-lg transition flex items-center justify-center gap-1.5 ${tab === 'gemini' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                🤖 Gemini 1.5 Flash AI
+              </button>
+            </div>
+
+            {tab === 'gmaps' && (
+              <div className="space-y-3 text-xs">
+                <div className="bg-blue-50/80 p-3.5 rounded-2xl border border-blue-200/70 space-y-1">
+                  <div className="font-bold text-blue-900">Google Maps Platform Integration:</div>
+                  <p className="text-slate-600 text-[11px] leading-relaxed">
+                    Unlocks Photorealistic Google Satellite imagery, Hybrid street networks, Google Terrain, Street View 360° ground recon, and Places search.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Google Maps API Key</label>
+                  <input
+                    type="password"
+                    value={gKey}
+                    onChange={(e) => setGKey(e.target.value)}
+                    placeholder="AIzaSy..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 font-mono focus:bg-white"
+                  />
+                </div>
+
+                <div className="text-[11px] text-slate-500 space-y-1">
+                  <p>• Get a standard key from the <a href="https://console.cloud.google.com/google/maps-apis/credentials?utm_campaign=gmp_git_agentskills_v1" target="_blank" className="text-blue-600 underline font-bold">Google Cloud Console</a>.</p>
+                  <p>• Or mint a free prototyping key via the <a href="https://mapsplatform.google.com/maps-demo-key?utm_campaign=gmp_git_agentskills_v1" target="_blank" className="text-blue-600 underline font-bold">Maps Demo Key portal</a>.</p>
+                </div>
               </div>
-            </div>
+            )}
 
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Google Gemini API Key (Optional for Cloud AI Inference)</label>
-              <input
-                type="password"
-                value={key}
-                onChange={(e) => setKey(e.target.value)}
-                placeholder="AIzaSy..."
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 font-mono focus:bg-white"
-              />
-            </div>
+            {tab === 'gemini' && (
+              <div className="space-y-3 text-xs">
+                <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 space-y-1">
+                  <div className="text-slate-500 font-medium">Active Multimodal Engine:</div>
+                  <div className="font-bold font-mono text-blue-700 flex items-center gap-1.5">
+                    <span className={`w-2.5 h-2.5 rounded-full ${gemKey ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
+                    {gemKey.trim() ? 'Google Gemini 1.5 Flash (Cloud API)' : 'Local Vision Fallback Engine (Offline Safe)'}
+                  </div>
+                </div>
 
-            <p className="text-[11px] text-slate-500 leading-relaxed">
-              When an API key is saved, RescueMap AI connects to Google's live Gemini 1.5 Flash Vision model. When empty, it seamlessly uses the local simulation fallback engine for offline judging.
-            </p>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Google Gemini API Key (Optional)</label>
+                  <input
+                    type="password"
+                    value={gemKey}
+                    onChange={(e) => setGemKey(e.target.value)}
+                    placeholder="AIzaSy..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 font-mono focus:bg-white"
+                  />
+                </div>
+              </div>
+            )}
 
-            <div className="flex justify-end gap-2 pt-1">
-              <button onClick={() => { setKey(''); setGeminiApiKey(''); setIsApiKeyOpen(false); }} className="px-3.5 py-2 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium border border-slate-200">Clear / Reset</button>
-              <button onClick={() => { setGeminiApiKey(key); setIsApiKeyOpen(false); }} className="px-4 py-2 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-md">Save Settings</button>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button onClick={() => { setGKey(''); setGemKey(''); }} className="px-3.5 py-2 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium border border-slate-200">Clear</button>
+              <button onClick={handleSave} className="px-5 py-2 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-md">Save & Apply</button>
             </div>
           </div>
         </div>
@@ -1841,6 +2181,7 @@
             <ExportModal />
             <PresentationModal />
             <QrModal />
+            <StreetViewModal />
           </div>
         </DisasterProvider>
       );
