@@ -51,13 +51,14 @@
     <!-- Google Maps Platform Loader Helper -->
   <script>
     window.loadGoogleMapsScript = function(apiKey) {
+      if (!apiKey || !apiKey.trim()) return Promise.reject(new Error("No API key provided"));
       if (window.google && window.google.maps) return Promise.resolve(window.google.maps);
       return new Promise((resolve, reject) => {
         const existing = document.getElementById('google-maps-js-sdk');
         if (existing) existing.remove();
         const script = document.createElement('script');
         script.id = 'google-maps-js-sdk';
-        const keyParam = apiKey ? `key=${encodeURIComponent(apiKey)}&` : '';
+        const keyParam = `key=${encodeURIComponent(apiKey.trim())}&`;
         script.src = `https://maps.googleapis.com/maps/api/js?${keyParam}libraries=places,marker,geometry&v=weekly&callback=initGoogleMapsCallback`;
         script.async = true;
         script.defer = true;
@@ -457,7 +458,7 @@
         if (window.loadGoogleMapsScript) window.loadGoogleMapsScript(key).catch(()=>{});
       };
 
-      const [mapProvider, setMapProviderState] = useState(() => localStorage.getItem('rescuemap_map_provider') || (localStorage.getItem('rescuemap_google_maps_key') ? 'google' : 'leaflet'));
+      const [mapProvider, setMapProviderState] = useState(() => (localStorage.getItem('rescuemap_google_maps_key') ? (localStorage.getItem('rescuemap_map_provider') || 'google') : 'leaflet'));
       const setMapProvider = (p) => {
         setMapProviderState(p);
         localStorage.setItem('rescuemap_map_provider', p);
@@ -900,8 +901,12 @@
       const personnelChartInstance = useRef(null);
       const resourceChartInstance = useRef(null);
 
-      // Load Google Maps SDK
+      // Load Google Maps SDK only when a valid key is provided
       useEffect(() => {
+        if (!googleMapsApiKey || !googleMapsApiKey.trim()) {
+          setIsGoogleLoaded(false);
+          return;
+        }
         if (window.google && window.google.maps) {
           setIsGoogleLoaded(true);
           return;
