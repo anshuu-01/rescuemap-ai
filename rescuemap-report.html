@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RescueMap AI — Project Documentation & PDF Report</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+  <style>
+    /* ── Reset & Base ─────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --cyan:    #06b6d4;
+      --cyan-dk: #0891b2;
+      --slate-950: #020617;
+      --slate-900: #0f172a;
+      --slate-800: #1e293b;
+      --slate-700: #334155;
+      --slate-400: #94a3b8;
+      --slate-200: #e2e8f0;
+      --red:     #ef4444;
+      --amber:   #f59e0b;
+      --green:   #22c55e;
+      --purple:  #a855f7;
+      --ink:     #0f172a;
+    }
+
+    html { font-size: 15px; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #f8fafc;
+      color: var(--ink);
+      line-height: 1.7;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    /* ── Print Layout ─────────────────────────────────────────────── */
+    @media print {
+      body { background: white; font-size: 12px; }
+      .no-print { display: none !important; }
+      .page-break { page-break-before: always; }
+      .page { box-shadow: none; border-radius: 0; margin: 0; max-width: 100%; }
+      h2 { page-break-after: avoid; }
+      .card, .feature-card, .step-item { break-inside: avoid; }
+    }
+
+    /* ── Screen Print Button ──────────────────────────────────────── */
+    .print-bar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      background: var(--slate-900);
+      color: white;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 999;
+      font-size: 0.9rem;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    .print-bar span { color: var(--cyan); font-weight: 600; }
+    .print-btn {
+      background: linear-gradient(135deg, var(--cyan), var(--cyan-dk));
+      color: white;
+      border: none;
+      padding: 10px 24px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.3px;
+      transition: all 0.2s ease;
+    }
+    .print-btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+
+    /* ── Page Wrapper ─────────────────────────────────────────────── */
+    .page {
+      max-width: 900px;
+      margin: 70px auto 40px;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 40px rgba(0,0,0,0.10);
+      overflow: hidden;
+    }
+
+    /* ── Cover ────────────────────────────────────────────────────── */
+    .cover {
+      background: linear-gradient(135deg, #020617 0%, #0c1a3a 50%, #0a2744 100%);
+      padding: 64px 56px 56px;
+      position: relative;
+      overflow: hidden;
+    }
+    .cover::before {
+      content: '';
+      position: absolute;
+      top: -80px; right: -80px;
+      width: 400px; height: 400px;
+      background: radial-gradient(circle, rgba(6,182,212,0.18) 0%, transparent 70%);
+      border-radius: 50%;
+    }
+
+    .cover-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(6,182,212,0.15);
+      border: 1px solid rgba(6,182,212,0.4);
+      color: var(--cyan);
+      padding: 6px 16px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 28px;
+    }
+
+    .cover h1 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 3.2rem;
+      font-weight: 900;
+      color: white;
+      line-height: 1.1;
+      margin-bottom: 12px;
+      position: relative;
+      z-index: 1;
+    }
+    .cover h1 span {
+      background: linear-gradient(90deg, #06b6d4, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .cover-subtitle {
+      color: rgba(255,255,255,0.7);
+      font-size: 1.1rem;
+      margin-bottom: 36px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .cover-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      position: relative;
+      z-index: 1;
+    }
+    .cover-meta-item {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px;
+      padding: 12px 20px;
+    }
+    .cover-meta-item .label {
+      color: rgba(255,255,255,0.4);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+    }
+    .cover-meta-item .value {
+      color: white;
+      font-weight: 600;
+      font-size: 0.92rem;
+    }
+
+    .cover-divider {
+      height: 4px;
+      background: linear-gradient(90deg, #06b6d4, #818cf8, #a855f7);
+    }
+
+    /* ── Content Body ─────────────────────────────────────────────── */
+    .body {
+      padding: 48px 56px;
+    }
+
+    /* ── Section Heading ──────────────────────────────────────────── */
+    .section-label {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      margin-top: 40px;
+    }
+    .section-label:first-child { margin-top: 0; }
+
+    .section-num {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, var(--cyan), var(--cyan-dk));
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      color: white;
+      font-weight: 700;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+    }
+
+    h2 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.45rem;
+      font-weight: 800;
+      color: var(--ink);
+    }
+
+    .section-rule {
+      border: none;
+      border-top: 2px solid #e2e8f0;
+      margin-bottom: 24px;
+    }
+
+    /* ── Cards ────────────────────────────────────────────────────── */
+    .card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 20px 24px;
+      margin-bottom: 16px;
+    }
+    .card-title {
+      font-weight: 700;
+      font-size: 0.95rem;
+      color: var(--ink);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-body {
+      color: #475569;
+      font-size: 0.88rem;
+      line-height: 1.65;
+    }
+
+    /* ── Feature Grid ─────────────────────────────────────────────── */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 8px;
+    }
+    .feature-card {
+      background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+      border: 1px solid #bae6fd;
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .feature-icon {
+      font-size: 1.6rem;
+      margin-bottom: 8px;
+      display: block;
+    }
+    .feature-title {
+      font-weight: 700;
+      font-size: 0.9rem;
+      color: #0c4a6e;
+      margin-bottom: 4px;
+    }
+    .feature-desc {
+      font-size: 0.82rem;
+      color: #075985;
+      line-height: 1.55;
+    }
+
+    /* ── Tech Stack Table ─────────────────────────────────────────── */
+    .tech-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    .tech-table th {
+      background: var(--slate-900);
+      color: white;
+      padding: 12px 16px;
+      text-align: left;
+      font-weight: 600;
+      font-size: 0.8rem;
+      letter-spacing: 0.4px;
+    }
+    .tech-table th:first-child { border-radius: 8px 0 0 0; }
+    .tech-table th:last-child  { border-radius: 0 8px 0 0; }
+    .tech-table td {
+      padding: 11px 16px;
+      border-bottom: 1px solid #f1f5f9;
+      vertical-align: top;
+    }
+    .tech-table tr:last-child td { border-bottom: none; }
+    .tech-table tr:nth-child(even) td { background: #f8fafc; }
+
+    .tag {
+      display: inline-block;
+      background: rgba(6,182,212,0.1);
+      color: #0891b2;
+      border: 1px solid rgba(6,182,212,0.3);
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* ── How It Was Built Steps ───────────────────────────────────── */
+    .step-list { list-style: none; }
+    .step-item {
+      display: flex;
+      gap: 18px;
+      margin-bottom: 22px;
+    }
+    .step-num {
+      width: 36px; height: 36px;
+      background: var(--slate-900);
+      color: var(--cyan);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+      margin-top: 2px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .step-content h4 {
+      font-weight: 700;
+      font-size: 0.95rem;
+      color: var(--ink);
+      margin-bottom: 4px;
+    }
+    .step-content p {
+      font-size: 0.86rem;
+      color: #475569;
+      line-height: 1.6;
+    }
+
+    /* ── Architecture Diagram ─────────────────────────────────────── */
+    .arch-box {
+      background: var(--slate-900);
+      border-radius: 14px;
+      padding: 28px;
+      color: white;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      line-height: 1.9;
+    }
+    .arch-layer {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .arch-layer-label {
+      color: rgba(255,255,255,0.35);
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      width: 80px;
+      flex-shrink: 0;
+    }
+    .arch-nodes {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .arch-node {
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px;
+      padding: 5px 14px;
+      font-size: 0.72rem;
+      color: rgba(255,255,255,0.85);
+    }
+    .arch-node.cyan { border-color: rgba(6,182,212,0.4); color: #67e8f9; background: rgba(6,182,212,0.08); }
+    .arch-node.purple { border-color: rgba(168,85,247,0.4); color: #c4b5fd; background: rgba(168,85,247,0.08); }
+    .arch-node.green { border-color: rgba(34,197,94,0.4); color: #86efac; background: rgba(34,197,94,0.08); }
+    .arch-node.amber { border-color: rgba(245,158,11,0.4); color: #fcd34d; background: rgba(245,158,11,0.08); }
+    .arch-arrow {
+      text-align: center;
+      color: rgba(255,255,255,0.25);
+      font-size: 1rem;
+      margin: 2px 0;
+      padding-left: 80px;
+    }
+
+    /* ── Priority Tier Table ──────────────────────────────────────── */
+    .tier-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    .tier-table th {
+      text-align: left;
+      padding: 10px 16px;
+      background: #f1f5f9;
+      color: #475569;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .tier-table td {
+      padding: 11px 16px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .tier-badge {
+      display: inline-block;
+      padding: 3px 12px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 0.78rem;
+    }
+    .tier-s  { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+    .tier-a  { background: #fff7ed; color: #ea580c; border: 1px solid #fed7aa; }
+    .tier-b  { background: #fefce8; color: #ca8a04; border: 1px solid #fef08a; }
+    .tier-c  { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+
+    /* ── Highlight Box ────────────────────────────────────────────── */
+    .highlight-box {
+      background: linear-gradient(135deg, #0c4a6e, #1e3a5f);
+      border-left: 4px solid var(--cyan);
+      border-radius: 0 12px 12px 0;
+      padding: 20px 24px;
+      color: rgba(255,255,255,0.92);
+      font-size: 0.9rem;
+      line-height: 1.7;
+      margin: 24px 0;
+    }
+    .highlight-box strong { color: var(--cyan); }
+
+    /* ── Footer ───────────────────────────────────────────────────── */
+    .footer {
+      background: var(--slate-900);
+      color: rgba(255,255,255,0.4);
+      text-align: center;
+      padding: 24px;
+      font-size: 0.8rem;
+    }
+    .footer span { color: var(--cyan); }
+
+    p { margin-bottom: 12px; color: #334155; font-size: 0.9rem; }
+    p:last-child { margin-bottom: 0; }
+
+    ul.dot-list { padding-left: 20px; }
+    ul.dot-list li {
+      color: #475569;
+      font-size: 0.88rem;
+      margin-bottom: 6px;
+      line-height: 1.6;
+    }
+
+    .divider { height: 1px; background: #e2e8f0; margin: 36px 0; }
+  </style>
+</head>
+<body>
+
+<!-- ── Print Bar ──────────────────────────────────────────────────── -->
+<div class="print-bar no-print">
+  <div>📄 <span>RescueMap AI</span> — Official Technical Project Report</div>
+  <button class="print-btn" onclick="window.print()">🖨️ Save as PDF</button>
+</div>
+
+<!-- ── Main Page ─────────────────────────────────────────────────── -->
+<div class="page">
+
+  <!-- Cover -->
+  <div class="cover">
+    <div class="cover-badge">🚨 Hackathon Technical Overview &nbsp;·&nbsp; 2026</div>
+    <h1>RescueMap <span>AI</span></h1>
+    <p class="cover-subtitle">Post-Disaster Damage Mapping &amp; Intelligent Relief Prioritization Platform</p>
+    <div class="cover-meta">
+      <div class="cover-meta-item">
+        <div class="label">Developer</div>
+        <div class="value">Antigravity AI</div>
+      </div>
+      <div class="cover-meta-item">
+        <div class="label">Date</div>
+        <div class="value">August 12, 2026</div>
+      </div>
+      <div class="cover-meta-item">
+        <div class="label">Demo Scenario</div>
+        <div class="value">Odisha Cyclone &amp; Flood 2026</div>
+      </div>
+      <div class="cover-meta-item">
+        <div class="label">Core Stack</div>
+        <div class="value">React · Gemini AI · Leaflet</div>
+      </div>
+    </div>
+  </div>
+  <div class="cover-divider"></div>
+
+  <!-- Body -->
+  <div class="body">
+
+    <!-- 1. What is RescueMap AI? -->
+    <div class="section-label">
+      <div class="section-num">1</div>
+      <h2>What is RescueMap AI &amp; What Purpose Does It Serve?</h2>
+    </div>
+    <hr class="section-rule">
+
+    <p>
+      <strong>RescueMap AI</strong> is a real-time, AI-powered disaster management and mitigation web application designed for emergency response teams (e.g., NDRF, SDRF, District Collectors, and First Responders).
+    </p>
+    <p>
+      During large-scale disasters like cyclones or floods, commanders face an overwhelming volume of conflicting disaster reports with limited rescue assets. RescueMap AI addresses this critical bottleneck:
+    </p>
+    <ul class="dot-list" style="margin-bottom: 20px;">
+      <li>🛸 <strong>Drone & Satellite Imagery Ingestion:</strong> Accepts aerial reconnaissance photos uploaded by field teams or autonomous drones.</li>
+      <li>🤖 <strong>Multimodal AI Computer Vision:</strong> Leverages Google Gemini 2.0 Flash to instantly detect structural collapse, flood levels, submerged roads, and downed power infrastructure.</li>
+      <li>🎯 <strong>Algorithmic Priority Scoring (0–100):</strong> Ranks affected sites from Tier S (Immediate Emergency) to Tier C (Monitor) using a multi-factor decision matrix.</li>
+      <li>🗺️ <strong>Live Geospatial Situation Room:</strong> Maps all active sites on an interactive Leaflet map with spatial popup analytics and satellite overlays.</li>
+    </ul>
+
+    <div class="highlight-box">
+      💡 <strong>Core Value Proposition:</strong> Converts raw drone photos into prioritized, actionable rescue routes in under 60 seconds — eliminating manual reporting friction and saving critical lives during the golden hours of disaster relief.
+    </div>
+
+    <!-- 2. Key Features -->
+    <div class="section-label">
+      <div class="section-num">2</div>
+      <h2>Core Application Features</h2>
+    </div>
+    <hr class="section-rule">
+
+    <div class="feature-grid">
+      <div class="feature-card">
+        <span class="feature-icon">🗺️</span>
+        <div class="feature-title">Geospatial Situation Map</div>
+        <div class="feature-desc">Interactive OpenStreetMap satellite layer powered by Leaflet.js with dynamic tier-coded SVG pin markers (Tier S Red to Tier C Green).</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🤖</span>
+        <div class="feature-title">Gemini Vision AI Engine</div>
+        <div class="feature-desc">Direct client-side integration with Google Gemini 2.0 Flash for zero-latency structural damage classification and reasoning generation.</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">📊</span>
+        <div class="feature-title">Multi-Factor Priority Scoring</div>
+        <div class="feature-desc">Dynamic scoring matrix combining structural damage, road accessibility, hospital proximity, population density, and vulnerable demographic count.</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">📂</span>
+        <div class="feature-title">Field Upload with EXIF Extraction</div>
+        <div class="feature-desc">Upload portal with ExifReader.js to extract GPS lat/long metadata automatically from camera photos.</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🖼️</span>
+        <div class="feature-title">Before / After Slider Comparison</div>
+        <div class="feature-desc">Interactive split-screen visual comparison tool to contrast pre-disaster satellite images against post-disaster drone reconnaissance photos.</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">📣</span>
+        <div class="feature-title">AI Voice Situation Briefing</div>
+        <div class="feature-desc">Native Web Speech API text-to-speech engine providing audible voice briefings of current disaster assessments for hands-free operations.</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">📄</span>
+        <div class="feature-title">CSV & Audit Trail Export</div>
+        <div class="feature-desc">Export ranked priority assessments as standardized CSV data for regional command centers, accompanied by transparent audit logs.</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">📱</span>
+        <div class="feature-title">Mobile QR Tunnel Sharing</div>
+        <div class="feature-desc">Built-in QR canvas generator using QRious to allow judges and commanders to launch the responsive mobile web app on personal phones instantly.</div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- 3. AI Priority Scoring Algorithm -->
+    <div class="section-label">
+      <div class="section-num">3</div>
+      <h2>The AI Priority Scoring Matrix</h2>
+    </div>
+    <hr class="section-rule">
+
+    <p>Sites are evaluated programmatically on a <strong>0–100 scale</strong> based on weighted critical factors:</p>
+
+    <table class="tech-table" style="margin-bottom: 20px;">
+      <thead>
+        <tr>
+          <th>Evaluation Factor</th>
+          <th>Weight</th>
+          <th>Scoring Logic</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>Structural Damage Severity</strong></td><td><span class="tag">35%</span></td><td>Destroyed (100) &gt; Major (75) &gt; Moderate (50) &gt; Minor (25)</td></tr>
+        <tr><td><strong>Road Blockage / Accessibility</strong></td><td><span class="tag">20%</span></td><td>Severely Blocked (100) &gt; Partially Blocked (60) &gt; Clear (10)</td></tr>
+        <tr><td><strong>Population Density</strong></td><td><span class="tag">15%</span></td><td>High density urban zones score higher urgency</td></tr>
+        <tr><td><strong>Vulnerable Group Count</strong></td><td><span class="tag">15%</span></td><td>Normalized count of elderly, pediatric, and hospital patients</td></tr>
+        <tr><td><strong>Hospital Distance Offset</strong></td><td><span class="tag">10%</span></td><td>Increases score as distance to functioning medical facility grows</td></tr>
+        <tr><td><strong>Route Isolation Factor</strong></td><td><span class="tag">5%</span></td><td>Absence of alternate access roads adds isolation weight</td></tr>
+      </tbody>
+    </table>
+
+    <table class="tier-table" style="border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0;">
+      <thead>
+        <tr>
+          <th>Tier</th>
+          <th>Score Range</th>
+          <th>Operational Classification</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="tier-badge tier-s">Tier S</span></td>
+          <td>80 – 100</td>
+          <td>Immediate Emergency — Direct Life Threat & Complete Isolation</td>
+        </tr>
+        <tr>
+          <td><span class="tier-badge tier-a">Tier A</span></td>
+          <td>60 – 79</td>
+          <td>High Priority — Severe Structural Damage or Major Obstruction</td>
+        </tr>
+        <tr>
+          <td><span class="tier-badge tier-b">Tier B</span></td>
+          <td>40 – 59</td>
+          <td>Moderate Urgency — Managed Access & Partial Service Disruption</td>
+        </tr>
+        <tr>
+          <td><span class="tier-badge tier-c">Tier C</span></td>
+          <td>0 – 39</td>
+          <td>Low Threat — Operational Facilities & Minor Surface Damage</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="divider"></div>
+
+    <!-- 4. System Architecture -->
+    <div class="section-label">
+      <div class="section-num">4</div>
+      <h2>System Architecture Diagram</h2>
+    </div>
+    <hr class="section-rule">
+
+    <div class="arch-box">
+      <div class="arch-layer">
+        <div class="arch-layer-label">DATA SOURCE</div>
+        <div class="arch-nodes">
+          <div class="arch-node amber">📸 Drone Recon Imagery</div>
+          <div class="arch-node amber">📱 Mobile Field Uploads</div>
+          <div class="arch-node amber">📍 GPS EXIF Metadata</div>
+        </div>
+      </div>
+      <div class="arch-arrow">↓ File Stream / Base64 Encoding</div>
+      <div class="arch-layer">
+        <div class="arch-layer-label">CLIENT APP</div>
+        <div class="arch-nodes">
+          <div class="arch-node cyan">⚛️ React 18 Engine</div>
+          <div class="arch-node cyan">🗺️ Leaflet Map Renderer</div>
+          <div class="arch-node cyan">🎨 Tailwind CSS Systems</div>
+        </div>
+      </div>
+      <div class="arch-arrow">↓ HTTPS Prompt Payload + Image Base64</div>
+      <div class="arch-layer">
+        <div class="arch-layer-label">AI SERVICE</div>
+        <div class="arch-nodes">
+          <div class="arch-node purple">🤖 Google Gemini 2.0 Flash Vision</div>
+          <div class="arch-node purple">⚡ Structured JSON Parsing</div>
+        </div>
+      </div>
+      <div class="arch-arrow">↓ Damage Assessment JSON</div>
+      <div class="arch-layer">
+        <div class="arch-layer-label">SCORING</div>
+        <div class="arch-nodes">
+          <div class="arch-node green">📊 Priority Score Calculator</div>
+          <div class="arch-node green">🏅 Tier Assignment Engine</div>
+        </div>
+      </div>
+      <div class="arch-arrow">↓ Live State Synchronization</div>
+      <div class="arch-layer">
+        <div class="arch-layer-label">COMMAND UI</div>
+        <div class="arch-nodes">
+          <div class="arch-node">📍 Dynamic Pins</div>
+          <div class="arch-node">📋 Priority Leaderboard</div>
+          <div class="arch-node">🔊 Voice Audio</div>
+          <div class="arch-node">📄 CSV Reports</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- 5. Technology Stack -->
+    <div class="section-label">
+      <div class="section-num">5</div>
+      <h2>Full Technology Stack Specification</h2>
+    </div>
+    <hr class="section-rule">
+
+    <table class="tech-table" style="border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
+      <thead>
+        <tr>
+          <th>Category</th>
+          <th>Technology</th>
+          <th>Details / Usage</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Core UI Architecture</strong></td>
+          <td>React 18 (CDN Standalone)</td>
+          <td>State hooks, Context API, component breakdown without build steps.</td>
+        </tr>
+        <tr>
+          <td><strong>Script Compiler</strong></td>
+          <td>Babel Standalone</td>
+          <td>In-browser real-time JSX transpilation.</td>
+        </tr>
+        <tr>
+          <td><strong>Styling & Motion</strong></td>
+          <td>Tailwind CSS + Custom CSS</td>
+          <td>Glassmorphism dark theme, responsiveness, print CSS styles.</td>
+        </tr>
+        <tr>
+          <td><strong>Mapping Engine</strong></td>
+          <td>Leaflet.js v1.9.4</td>
+          <td>Interactive maps, custom HTML SVG markers, popup management.</td>
+        </tr>
+        <tr>
+          <td><strong>Artificial Intelligence</strong></td>
+          <td>Google Gemini 2.0 Flash</td>
+          <td>Multimodal vision API for real-time disaster image recognition.</td>
+        </tr>
+        <tr>
+          <td><strong>Metadata Parsing</strong></td>
+          <td>ExifReader.js</td>
+          <td>Client-side extraction of GPS coordinates from drone photos.</td>
+        </tr>
+        <tr>
+          <td><strong>QR Generation</strong></td>
+          <td>QRious Library</td>
+          <td>Canvas-rendered QR code generator for instant mobile app sharing.</td>
+        </tr>
+        <tr>
+          <td><strong>Speech Synthesis</strong></td>
+          <td>Web Speech API</td>
+          <td>Browser native Text-to-Speech implementation for audio situation reports.</td>
+        </tr>
+        <tr>
+          <td><strong>Data Export</strong></td>
+          <td>Native JS Blob API</td>
+          <td>Client-side CSV generation and file download execution.</td>
+        </tr>
+        <tr>
+          <td><strong>Local Web Server</strong></td>
+          <td>Python http.server (Port 3000)</td>
+          <td>Lightweight local execution environment.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="divider"></div>
+
+    <!-- 6. How It Was Built From Scratch -->
+    <div class="section-label">
+      <div class="section-num">6</div>
+      <h2>How RescueMap AI Was Built From Scratch</h2>
+    </div>
+    <hr class="section-rule">
+
+    <ul class="step-list">
+      <li class="step-item">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <h4>Conceptualization & Problem Definition</h4>
+          <p>Identified the core disaster bottleneck: delay in converting raw field imagery into prioritized rescue dispatches. Designed a streamlined single-page situation room workflow.</p>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <h4>UI Framework & Dark Mode Foundation</h4>
+          <p>Configured Tailwind CSS in a single <code>index.html</code> template alongside Google Fonts (Inter, Outfit, JetBrains Mono) for a modern military-grade tactical aesthetics.</p>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <h4>React Context & State Store Setup</h4>
+          <p>Created <code>DisasterContext</code> to manage global state seamlessly across map elements, site cards, modal dialogs, and AI configuration flags.</p>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">4</div>
+        <div class="step-content">
+          <h4>Leaflet Map & Custom Marker Pipeline</h4>
+          <p>Integrated Leaflet.js with OpenStreetMap layers. Built dynamic SVG map markers color-coded to reflect site risk tiers in real time.</p>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">5</div>
+        <div class="step-content">
+          <h4>Gemini Vision API Integration</h4>
+          <p>Wrote the <code>analyzeImageWithGemini()</code> function to stream base64 images to Google's Gemini Flash 2.0 API, receiving structured JSON payloads specifying damage and road blockages.</p>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">6</div>
+        <div class="step-content">
+          <h4>Priority Scoring & Classification Engine</h4>
+          <p>Developed the <code>computePriorityScore()</code> mathematical model combining AI damage output with spatial and demographic vulnerability parameters.</p>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">7</div>
+        <div class="step-content">
+          <h4>EXIF GPS Metadata Extraction</h4>
+          <p>Implemented ExifReader.js inside the image uploader to automatically extract camera location data, instantly pinning photos on the map upon upload.</p>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">8</div>
+        <div class="step-content">
+          <h4>Before/After Visual Comparison & Interactive Features</h4>
+          <p>Created interactive split-range sliders for visual destruction verification, voice audio briefing components using Web Speech API, and CSV reporting capabilities.</p>
+        </div>
+      </li>
+    </ul>
+
+  </div><!-- /body -->
+
+  <!-- Footer -->
+  <div class="footer">
+    Built for Hackathon Demonstration &nbsp;·&nbsp; <span>RescueMap AI</span> &nbsp;·&nbsp; 2026
+  </div>
+
+</div><!-- /page -->
+
+</body>
+</html>
