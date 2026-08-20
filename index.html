@@ -214,6 +214,10 @@
 
       // 1. Curated Instant Disaster Knowledge Base (0ms instant response)
       const KNOWN_PLACES = {
+        'khandagiri': { lat: 20.2605, lng: 85.7875, address: 'Khandagiri, Bhubaneswar, Odisha, India' },
+        'cuttack mahanadi': { lat: 20.4625, lng: 85.8828, address: 'Cuttack Mahanadi Sector, Odisha, India' },
+        'jagatsinghpur belt': { lat: 20.2667, lng: 86.1667, address: 'Jagatsinghpur Belt, Odisha, India' },
+        'puri coastal beach': { lat: 19.8135, lng: 85.8312, address: 'Puri Coastal Beach, Odisha, India' },
         'jagatsinghpur': { lat: 20.272, lng: 86.172, address: 'Jagatsinghpur, Odisha, India' },
         'cuttack': { lat: 20.462, lng: 85.882, address: 'Cuttack, Odisha, India' },
         'bhubaneswar': { lat: 20.296, lng: 85.824, address: 'Bhubaneswar, Odisha, India' },
@@ -1228,8 +1232,10 @@ Respond with a strictly formatted JSON object matching this schema:
 
           {/* Top Center Location Badge */}
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-white/95 backdrop-blur-md px-4 sm:px-5 py-2 rounded-full shadow-lg border border-slate-200/80 text-xs font-extrabold text-slate-900 font-outfit flex items-center gap-2 max-w-[90%] truncate">
-            <span className="text-red-600 font-bold">📍 Location:</span>
-            <span className="text-slate-800 font-bold truncate">{activeScenario.areaName}</span>
+            <span className="text-red-600 font-bold">📍 Active Sector:</span>
+            <span className="text-slate-800 font-bold truncate">
+              {selectedAssessment ? selectedAssessment.location.address : (filteredAssessments.length > 0 ? filteredAssessments[0].location.address : activeScenario.areaName)}
+            </span>
             <span className="text-slate-300">•</span>
             <span className="text-blue-600 font-mono font-extrabold">{filteredAssessments.length} Priority Sites</span>
           </div>
@@ -1609,22 +1615,22 @@ Respond with a strictly formatted JSON object matching this schema:
       );
     }
 
-            function UploadModal() {
+                function UploadModal() {
       const { isUploadOpen, setIsUploadOpen, uploadNewImage } = useDisaster();
       const [file, setFile] = useState(null);
       const [beforeFile, setBeforeFile] = useState(null);
-      const [address, setAddress] = useState('Khandagiri, Odisha, India');
-      const [lat, setLat] = useState('20.2675');
-      const [lng, setLng] = useState('85.8013');
+      const [address, setAddress] = useState('');
+      const [lat, setLat] = useState('');
+      const [lng, setLng] = useState('');
       const [geocoding, setGeocoding] = useState(false);
       const [geocodeResult, setGeocodeResult] = useState(null);
       const [suggestions, setSuggestions] = useState([]);
       const [isSearchingSuggestions, setIsSearchingSuggestions] = useState(false);
 
-      // Reporter & SOS State
-      const [reporterName, setReporterName] = useState('Ramesh Jena');
-      const [reporterPhone, setReporterPhone] = useState('+91 98765 43210');
-      const [sosNotes, setSosNotes] = useState('Flood water at waist level. Families evacuated to temple roof.');
+      // Reporter & SOS State (Starts Completely Empty)
+      const [reporterName, setReporterName] = useState('');
+      const [reporterPhone, setReporterPhone] = useState('');
+      const [sosNotes, setSosNotes] = useState('');
 
       const debounceTimeout = useRef(null);
 
@@ -1647,10 +1653,11 @@ Respond with a strictly formatted JSON object matching this schema:
       };
 
       const selectSuggestion = (sugg) => {
-        setAddress(sugg.subtitle || sugg.title);
+        const fullAddr = sugg.subtitle ? `${sugg.title}, ${sugg.subtitle}` : sugg.title;
+        setAddress(fullAddr);
         setLat(sugg.lat.toFixed(6));
         setLng(sugg.lng.toFixed(6));
-        setGeocodeResult(`📍 ${sugg.subtitle || sugg.title}`);
+        setGeocodeResult(`✅ Location Verified: ${fullAddr}`);
         setSuggestions([]);
       };
 
@@ -1667,7 +1674,9 @@ Respond with a strictly formatted JSON object matching this schema:
           setLat(res.lat.toFixed(6));
           setLng(res.lng.toFixed(6));
           setAddress(res.address);
-          setGeocodeResult(`✅ Found: ${res.address}`);
+          setGeocodeResult(`✅ Location Found: ${res.address}`);
+        } else {
+          setGeocodeResult(`📍 Using location name: ${query}`);
         }
       };
 
@@ -1676,7 +1685,7 @@ Respond with a strictly formatted JSON object matching this schema:
         if (defaultLat && defaultLng) {
           setLat(defaultLat);
           setLng(defaultLng);
-          setGeocodeResult(`📍 ${locName}`);
+          setGeocodeResult(`✅ Location Selected: ${locName}`);
         } else {
           handleSearchLocation(locName);
         }
@@ -1686,29 +1695,43 @@ Respond with a strictly formatted JSON object matching this schema:
         e.preventDefault();
         if (!file) return;
 
+        let finalAddress = address.trim() || 'Disaster Incident Location';
         let parsedLat = parseFloat(lat);
         let parsedLng = parseFloat(lng);
 
+        // If lat/lng empty, do a quick geocode
         if ((isNaN(parsedLat) || isNaN(parsedLng)) && address.trim()) {
           const res = await geocodeLocationQuery(address);
           if (res) {
             parsedLat = res.lat;
             parsedLng = res.lng;
+            finalAddress = res.address;
           }
         }
 
         await uploadNewImage(
           file,
-          address || 'Disaster Incident Location',
-          isNaN(parsedLat) ? 20.2675 : parsedLat,
-          isNaN(parsedLng) ? 85.8013 : parsedLng,
+          finalAddress,
+          isNaN(parsedLat) ? 20.2605 : parsedLat,
+          isNaN(parsedLng) ? 85.7875 : parsedLng,
           beforeFile,
           {
-            name: reporterName || 'Ground Observer',
-            phone: reporterPhone || '',
-            notes: sosNotes || ''
+            name: reporterName.trim() || '',
+            phone: reporterPhone.trim() || '',
+            notes: sosNotes.trim() || ''
           }
         );
+
+        // Reset form for next upload
+        setFile(null);
+        setBeforeFile(null);
+        setAddress('');
+        setLat('');
+        setLng('');
+        setGeocodeResult(null);
+        setReporterName('');
+        setReporterPhone('');
+        setSosNotes('');
         setIsUploadOpen(false);
       };
 
@@ -1760,7 +1783,7 @@ Respond with a strictly formatted JSON object matching this schema:
                           handleSearchLocation();
                         }
                       }}
-                      placeholder="Type place name (e.g. Khandagiri, Cuttack, Puri, Balasore)..." 
+                      placeholder="Type place name (e.g. Khandagiri, Balasore, Cuttack, Puri, Miami)..." 
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 focus:bg-white focus:border-blue-500 focus:outline-none pr-8 font-medium" 
                     />
                     {address && (
@@ -1781,6 +1804,14 @@ Respond with a strictly formatted JSON object matching this schema:
                     {geocoding ? 'Locating...' : '🔍 Search'}
                   </button>
                 </div>
+
+                {/* Geocode Status Feedback */}
+                {geocodeResult && (
+                  <div className="mt-2 text-xs bg-emerald-50 text-emerald-900 p-2.5 rounded-xl border border-emerald-200 font-bold flex items-center gap-1.5 animate-fadeIn">
+                    <span>📍</span>
+                    <span>{geocodeResult}</span>
+                  </div>
+                )}
 
                 {/* Live Autocomplete Dropdown */}
                 {suggestions.length > 0 && (
@@ -1807,18 +1838,22 @@ Respond with a strictly formatted JSON object matching this schema:
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Quick Disaster Sectors:</span>
                 <div className="flex flex-wrap gap-1.5">
                   {[
-                    { name: '📍 Khandagiri, Odisha', lat: '20.2675', lng: '85.8013' },
-                    { name: '📍 Cuttack Mahanadi', lat: '20.4625', lng: '85.8828' },
-                    { name: '📍 Jagatsinghpur Belt', lat: '20.2667', lng: '86.1667' },
-                    { name: '📍 Puri Coastal Beach', lat: '19.8135', lng: '85.8312' }
+                    { name: 'Khandagiri, Bhubaneswar', lat: '20.2605', lng: '85.7875' },
+                    { name: 'Cuttack Mahanadi', lat: '20.4625', lng: '85.8828' },
+                    { name: 'Jagatsinghpur Belt', lat: '20.2667', lng: '86.1667' },
+                    { name: 'Puri Coastal Beach', lat: '19.8135', lng: '85.8312' }
                   ].map((loc, idx) => (
                     <button
                       key={idx}
                       type="button"
                       onClick={() => selectQuickLocation(loc.name, loc.lat, loc.lng)}
-                      className="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 text-slate-700 text-[11px] font-bold rounded-lg border border-slate-200 transition cursor-pointer"
+                      className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border transition cursor-pointer ${
+                        address === loc.name 
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-xs' 
+                          : 'bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-700 border-slate-200'
+                      }`}
                     >
-                      {loc.name}
+                      📍 {loc.name}
                     </button>
                   ))}
                 </div>
@@ -1828,7 +1863,7 @@ Respond with a strictly formatted JSON object matching this schema:
               <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-900 font-outfit flex items-center gap-1.5">
-                    <span>📞</span> Reporter & Ground Citizen Information
+                    <span>📞</span> Reporter & Ground Citizen Information (Optional)
                   </span>
                   <span className="text-[10px] text-blue-600 bg-blue-50 font-bold px-2 py-0.5 rounded-md border border-blue-200">
                     Live NDRF Callback
@@ -1842,7 +1877,7 @@ Respond with a strictly formatted JSON object matching this schema:
                       type="text" 
                       value={reporterName} 
                       onChange={(e) => setReporterName(e.target.value)} 
-                      placeholder="e.g. Ramesh Jena" 
+                      placeholder="e.g. Ramesh Jena (optional)" 
                       className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs text-slate-900 focus:outline-none focus:border-blue-400 font-medium" 
                     />
                   </div>
@@ -1852,7 +1887,7 @@ Respond with a strictly formatted JSON object matching this schema:
                       type="text" 
                       value={reporterPhone} 
                       onChange={(e) => setReporterPhone(e.target.value)} 
-                      placeholder="e.g. +91 98765 43210" 
+                      placeholder="e.g. +91 98765 43210 (optional)" 
                       className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs text-slate-900 font-mono focus:outline-none focus:border-blue-400 font-medium" 
                     />
                   </div>
@@ -1863,7 +1898,7 @@ Respond with a strictly formatted JSON object matching this schema:
                   <textarea 
                     value={sosNotes} 
                     onChange={(e) => setSosNotes(e.target.value)} 
-                    placeholder="e.g. Water level rising, 4 people trapped on roof, urgent raft needed..." 
+                    placeholder="Describe field situation or stranded persons (optional)..." 
                     rows="2"
                     className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs text-slate-900 focus:outline-none focus:border-blue-400 font-medium" 
                   />
